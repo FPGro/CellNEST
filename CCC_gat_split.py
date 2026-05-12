@@ -261,21 +261,48 @@ class my_data():
         self.edge_attr = edge_attr
 
 
+#def corruption(data):
+#    """Add Statement of Purpose
+#    Args: [to be]
+#           
+#    Returns: [to be]
+#
+#    """
+#    #print('inside corruption function')
+#    #print(data.x)
+#
+#    data.x = data.x.to_dense()
+#    x = data.x[torch.randperm(data.x.size(0))]
+#    x = x.to_sparse()
+#    gc.collect()
+#    return my_data(x, data.edge_index, data.edge_attr)
+
+# fix sparsity, see https://github.com/schwartzlab-methods/CellNEST/issues/34#issue-3919186324 
+
 def corruption(data):
-    """Add Statement of Purpose
-    Args: [to be]
-           
-    Returns: [to be]
-
     """
-    #print('inside corruption function')
-    #print(data.x)
+    Shuffle node features while keeping sparse COO format
+    """
 
-    data.x = data.x.to_dense()
-    x = data.x[torch.randperm(data.x.size(0))]
-    x = x.to_sparse()
-    gc.collect()
-    return my_data(x, data.edge_index, data.edge_attr)
+    # data.x: sparse COO tensor, shape [N, F]
+    x = data.x.coalesce()
+
+    # generate row permutation
+    idx = torch.randperm(x.size(0), device=x.device)
+
+    # mapping: old row index -> new row index
+    idx_inv = torch.empty_like(idx)
+    idx_inv[idx] = torch.arange(idx.numel(), device=x.device)
+
+    # remap sparse indices
+    indices = x.indices().clone()
+    indices[0] = idx_inv[indices[0]]
+
+    x_shuffled = torch.sparse_coo_tensor(
+        indices, x.values(), x.size()
+    ).coalesce()
+
+    return my_data(x_shuffled, data.edge_index, data.edge_attr)
 
 
 def train_CellNEST(args, graph_bag, in_channels):
